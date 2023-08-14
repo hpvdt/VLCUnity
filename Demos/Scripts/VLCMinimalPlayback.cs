@@ -12,7 +12,7 @@ public class VLCMinimalPlayback : MonoBehaviour
     const int seekTimeDelta = 5000;
     Texture2D tex = null;
     bool playing;
-    
+
     void Awake()
     {
         TextureHelper.FlipTextures(transform);
@@ -39,7 +39,7 @@ public class VLCMinimalPlayback : MonoBehaviour
         _mediaPlayer.SetTime(_mediaPlayer.Time - seekTimeDelta);
     }
 
-    void OnDisable() 
+    void OnDisable()
     {
         _mediaPlayer?.Stop();
         _mediaPlayer?.Dispose();
@@ -51,7 +51,7 @@ public class VLCMinimalPlayback : MonoBehaviour
 
     public void PlayPause()
     {
-        Debug.Log ("[VLC] Toggling Play Pause !");
+        Debug.Log("[VLC] Toggling Play Pause !");
         if (_mediaPlayer == null)
         {
             _mediaPlayer = new MediaPlayer(_libVLC);
@@ -64,23 +64,30 @@ public class VLCMinimalPlayback : MonoBehaviour
         {
             playing = true;
 
-            if(_mediaPlayer.Media == null)
+            if (_mediaPlayer.Media == null)
             {
                 // playing remote media
-                _mediaPlayer.Media = new Media(new Uri("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"));
+
+                // _mediaPlayer.Media = new Media(new Uri("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"));
+
+                _mediaPlayer.Media =
+                    new Media(
+                        new Uri("dshow://")
+                    );
+                _mediaPlayer.Media.AddOption(":dshow-vdev='USB2.0 HD UVC WebCam'");
             }
 
             _mediaPlayer.Play();
         }
     }
 
-    public void Stop ()
+    public void Stop()
     {
-        Debug.Log ("[VLC] Stopping Player !");
+        Debug.Log("[VLC] Stopping Player !");
 
         playing = false;
         _mediaPlayer?.Stop();
-        
+
         // there is no need to dispose every time you stop, but you should do so when you're done using the mediaplayer and this is how:
         // _mediaPlayer?.Dispose(); 
         // _mediaPlayer = null;
@@ -90,7 +97,7 @@ public class VLCMinimalPlayback : MonoBehaviour
 
     void Update()
     {
-        if(!playing) return;
+        if (!playing) return;
 
         if (tex == null)
         {
