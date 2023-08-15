@@ -74,7 +74,7 @@ public class VLCMinimalPlayback : MonoBehaviour
                     new Media(
                         new Uri("dshow://")
                     );
-                _mediaPlayer.Media.AddOption(":dshow-vdev='USB2.0 HD UVC WebCam'");
+                _mediaPlayer.Media.AddOption(":dshow-vdev='PIXPRO ORBIT360 4K'");
             }
 
             _mediaPlayer.Play();
