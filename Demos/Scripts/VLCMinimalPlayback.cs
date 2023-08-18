@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Threading.Tasks;
 using LibVLCSharp;
 
 /// this class serves as an example on how to configure playback in Unity with VLC for Unity using LibVLCSharp.
@@ -74,10 +75,20 @@ public class VLCMinimalPlayback : MonoBehaviour
                     new Media(
                         new Uri("dshow://")
                     );
-                _mediaPlayer.Media.AddOption(":dshow-vdev='PIXPRO ORBIT360 4K'");
-            }
+                _mediaPlayer.Media.AddOption(":dshow-vdev=PIXPRO ORBIT360 4K");
 
-            _mediaPlayer.Play();
+                Task.Run(async () =>
+                    {
+                        var success = await _mediaPlayer.PlayAsync();
+
+                        uint height = 0;
+                        uint width = 0;
+                        _mediaPlayer.Size(0, ref width, ref height);
+
+                        Debug.Log("Media size: " + width + "x" + height);
+                    }
+                );
+            }
         }
     }
 
