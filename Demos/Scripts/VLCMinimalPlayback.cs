@@ -75,7 +75,8 @@ public class VLCMinimalPlayback : MonoBehaviour
                     new Media(
                         new Uri("dshow://")
                     );
-                _mediaPlayer.Media.AddOption(":dshow-vdev=PIXPRO ORBIT360 4K");
+                // _mediaPlayer.Media.AddOption(":dshow-vdev=PIXPRO ORBIT360 4K");
+                _mediaPlayer.Media.AddOption(":dshow-vdev=\"OBS virtual camera\"");
 
                 Task.Run(async () =>
                     {
