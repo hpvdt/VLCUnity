@@ -67,7 +67,8 @@ public class VLCMinimalPlayback : MonoBehaviour
             if(_mediaPlayer.Media == null)
             {
                 // playing remote media
-                _mediaPlayer.Media = new Media(new Uri("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"));
+                // _mediaPlayer.Media = new Media(new Uri("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"));
+                _mediaPlayer.Media = new Media(new Uri("dshow:///"));
             }
 
             _mediaPlayer.Play();
