@@ -1,3 +1,4 @@
+using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -15,18 +16,25 @@ public class CopyLibVLCFiles : IPostprocessBuildWithReport
     const string Plugins = "Plugins";
     const string plugins = "plugins";
     const string Data = "_Data";
-    const string standaloneWindows = "StandaloneWindows64";
     const string Windows = "Windows";
+    const string Linux = "Linux";
     public int callbackOrder => 0;
     
     public void OnPostprocessBuild(BuildReport report)
     {
-        if(report.summary.platform.ToString() != standaloneWindows)
+        string platformFolder;
+        var platform = report.summary.platform;
+
+        if (platform == BuildTarget.StandaloneWindows64)
+            platformFolder = Windows;
+        else if (platform == BuildTarget.StandaloneLinux64)
+            platformFolder = Linux;
+        else
             return;
 
         var buildOutput = Path.GetDirectoryName(report.summary.outputPath);
         var libvlcBuildOutput = Path.Combine(buildOutput, $"{Application.productName}{Data}", Plugins, x64);
-        var sourceLibvlcLocation = Path.Combine(Path.GetFullPath(Application.dataPath), VLCUnity, Plugins, Windows, x64);
+        var sourceLibvlcLocation = Path.Combine(Path.GetFullPath(Application.dataPath), VLCUnity, Plugins, platformFolder, x64);
         var sourcePluginsLibvlcLocation = Path.Combine(sourceLibvlcLocation, plugins);
 
         CopyFolder(Path.Combine(sourceLibvlcLocation, lua), Path.Combine(libvlcBuildOutput, lua));

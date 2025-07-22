@@ -38,6 +38,7 @@ namespace Videolabs.VLCUnity.Editor
 
         const string UWP_PATH = "VLCUnity/Plugins/WSA/UWP";
         const string WINDOWS_PATH = "VLCUnity/Plugins/Windows/x86_64";
+        const string LINUX_PATH = "VLCUnity/Plugins/Linux/x86_64";
         const string ANDROID_PATH = "VLCUnity/Plugins/Android/libs";
         const string IOS_PATH = "VLCUnity/Plugins/iOS/";
         const string IOS_LOADPLUGIN_SOURCE = "LoadPlugin.mm";
@@ -53,6 +54,7 @@ namespace Videolabs.VLCUnity.Editor
         {
             ConfigureUWPNativePlugins();
             ConfigureWindowsNativePlugins();
+            ConfigureLinuxNativePlugins();
             ConfigureAndroidNativePlugins();
             ConfigureiOSNativePlugins();
             ConfigureLibVLCSharp();
@@ -113,6 +115,36 @@ namespace Videolabs.VLCUnity.Editor
                 if(cpu != "x86_64")
                 {
                     pi.SetPlatformData(BuildTarget.StandaloneWindows64, "CPU", "x86_64");
+                    dirty = true;
+                }
+
+                if(dirty)
+                {
+                    pi.SaveAndReimport();
+                }
+            }
+        }
+
+        void ConfigureLinuxNativePlugins()
+        {
+            PluginImporter[] importers = PluginImporter.GetAllImporters();
+            foreach (PluginImporter pi in importers)
+            {
+                if(!pi.isNativePlugin || !pi.assetPath.Contains(LINUX_PATH)) continue;
+
+                var dirty = false;
+
+                if(pi.GetCompatibleWithAnyPlatform() || !pi.GetCompatibleWithEditor() || !pi.GetCompatibleWithPlatform(BuildTarget.StandaloneLinux64))
+                {
+                    pi.SetCompatibleWithAnyPlatform(false);
+                    pi.SetCompatibleWithEditor(true);
+                    pi.SetCompatibleWithPlatform(BuildTarget.StandaloneLinux64, true);
+                    dirty = true;
+                }
+
+                if(pi.GetPlatformData(BuildTarget.StandaloneLinux64, "CPU") != "x86_64")
+                {
+                    pi.SetPlatformData(BuildTarget.StandaloneLinux64, "CPU", "x86_64");
                     dirty = true;
                 }
 

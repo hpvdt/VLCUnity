@@ -3,6 +3,7 @@
 #endif
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.Rendering;
@@ -20,15 +21,22 @@ namespace Videolabs.VLCUnity.Editor
         IPreprocessBuild
 #endif
     {
-        public int callbackOrder { get { return 0; } }
+        public int callbackOrder
+        {
+            get { return 0; }
+        }
 
         const string AndroidVulkanErrorMessage = "The Vulkan graphics API is not supported by the VLC Unity plugin." +
-        "\n\nPlease go to Player Settings > Android > Auto Graphics API and remove Vulkan from the list." +
-        "\nOnly OpenGL ES 2.0 and 3.0 are currently supported on Android.";
+                                                 "\n\nPlease go to Player Settings > Android > Auto Graphics API and remove Vulkan from the list." +
+                                                 "\nOnly OpenGL ES 2.0 and 3.0 are currently supported on Android.";
 
-        const string WindowsD3D12ErrorMessage = "The Direct3D12 graphics API is not supported by the VLC Unity plugin." +
-        "\n\nPlease go to Player Settings > Windows or UWP > Auto Graphics API and remove Direct3D12 from the list." +
-        "\nOnly Direct3D11 is currently supported on Windows and UWP targets.";
+        const string WindowsD3D12ErrorMessage =
+            "The Direct3D12 graphics API is not supported by the VLC Unity plugin." +
+            "\n\nPlease go to Player Settings > Windows or UWP > Auto Graphics API and remove Direct3D12 from the list." +
+            "\nOnly Direct3D11 is currently supported on Windows and UWP targets.";
+
+        const string LinuxVulkanErrorMessage =
+            "The Vulkan graphics API is not supported by the VLC Unity plugin on Linux.\n\nPlease go to Player Settings > Player > Other Settings and disable 'Auto Graphics API for Linux'. Then ensure Vulkan is not in the list of Graphics APIs.\nOnly OpenGLCore is currently supported on Linux.";
 
 #if UNITY_SUPPORTS_BUILD_REPORT
         public void OnPreprocessBuild(BuildReport report)
@@ -39,39 +47,29 @@ namespace Videolabs.VLCUnity.Editor
 
         public void OnPreprocessBuild(BuildTarget target, string path)
         {
-            if(target == BuildTarget.Android)
+            if (target == BuildTarget.Android)
             {
-                if(IsVulkanConfigured)
+                if (PlayerSettings.GetGraphicsAPIs(target).Contains(GraphicsDeviceType.Vulkan))
                 {
                     throw new BuildFailedException(AndroidVulkanErrorMessage);
                 }
             }
-            else if(target == BuildTarget.StandaloneWindows64 || target == BuildTarget.WSAPlayer)
+            else if (target == BuildTarget.StandaloneWindows64 || target == BuildTarget.WSAPlayer)
             {
-                if(IsD3D12Configured(target))
+                if (PlayerSettings.GetGraphicsAPIs(target).Contains(GraphicsDeviceType.Direct3D12))
                 {
                     throw new BuildFailedException(WindowsD3D12ErrorMessage);
                 }
             }
-        }
-
-        static bool IsVulkanConfigured => GetGraphicsApiIndex(BuildTarget.Android, GraphicsDeviceType.Vulkan) >= 0;
-
-        static bool IsD3D12Configured(BuildTarget target) => GetGraphicsApiIndex(target, GraphicsDeviceType.Direct3D12) >= 0;
-
-        static int GetGraphicsApiIndex(BuildTarget target, GraphicsDeviceType api)
-        {
-            int result = -1;
-            GraphicsDeviceType[] devices = UnityEditor.PlayerSettings.GetGraphicsAPIs(target);
-            for (int i = 0; i < devices.Length; i++)
+            else if (target == BuildTarget.StandaloneLinux64)
             {
-                if (devices[i] == api)
+                var graphicsAPIs = PlayerSettings.GetGraphicsAPIs(target).ToList();
+                if (graphicsAPIs.Contains(GraphicsDeviceType.Vulkan))
                 {
-                    result = i;
-                    break;
+                    graphicsAPIs.Remove(GraphicsDeviceType.Vulkan);
+                    PlayerSettings.SetGraphicsAPIs(target, graphicsAPIs.ToArray());
                 }
             }
-            return result;
         }
     }
 }
