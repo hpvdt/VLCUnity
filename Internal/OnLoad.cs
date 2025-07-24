@@ -4,36 +4,39 @@ using UnityEngine;
 
 namespace LibVLCSharp
 {
-    class OnLoad
+    public class OnLoad
     {
-#if !UNITY_EDITOR_WIN && (UNITY_ANDROID || UNITY_STANDALONE_OSX || UNITY_EDITOR_OSX)
+#if !UNITY_EDITOR_WIN && (UNITY_ANDROID || UNITY_STANDALONE_OSX || UNITY_EDITOR_OSX || UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX)
         const string UnityPlugin = "libVLCUnityPlugin";
 #elif UNITY_IOS
         const string UnityPlugin = "@rpath/VLCUnityPlugin.framework/VLCUnityPlugin";
 #else
         const string UnityPlugin = "VLCUnityPlugin";
 #endif
-        [DllImport(UnityPlugin, CallingConvention = CallingConvention.Cdecl, EntryPoint = "libvlc_unity_set_color_space")]
-        static extern void SetColorSpace(UnityColorSpace colorSpace);
+        [DllImport(UnityPlugin, CallingConvention = CallingConvention.Cdecl,
+            EntryPoint = "libvlc_unity_set_color_space")]
+        public static extern void SetColorSpace(UnityColorSpace colorSpace);
 
         [DllImport(UnityPlugin, CallingConvention = CallingConvention.Cdecl)]
         static extern IntPtr GetRenderEventFunc();
 
-        enum UnityColorSpace
+        public enum UnityColorSpace
         {
             Gamma = 0,
             Linear = 1,
         }
-        
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void OnBeforeSceneLoadRuntimeMethod()
         {
-          //  Debug.Log("UnityEngine.QualitySettings.activeColorSpace: " + PlayerColorSpace);
+            //  Debug.Log("UnityEngine.QualitySettings.activeColorSpace: " + PlayerColorSpace);
             SetColorSpace(PlayerColorSpace);
-#if UNITY_ANDROID || UNITY_IOS
+#if UNITY_ANDROID || UNITY_IOS || UNITY_STANDALONE_LINUX
             GL.IssuePluginEvent(GetRenderEventFunc(), 1);
 #endif
         }
-        static UnityColorSpace PlayerColorSpace => QualitySettings.activeColorSpace == 0 ? UnityColorSpace.Gamma : UnityColorSpace.Linear;
+
+        static UnityColorSpace PlayerColorSpace =>
+            QualitySettings.activeColorSpace == 0 ? UnityColorSpace.Gamma : UnityColorSpace.Linear;
     }
 }
