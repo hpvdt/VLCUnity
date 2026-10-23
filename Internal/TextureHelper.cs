@@ -53,8 +53,30 @@ namespace LibVLCSharp
 
         internal static bool HasRetiredRenderers()
         {
-            return HasRetiredRenderersNative();
+            if (_rendererRetirementProbeFailed)
+                return false;
+
+            try
+            {
+                return HasRetiredRenderersNative();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                // The process still maps the native plugin that was loaded when it started;
+                // exports added by an on-disk plugin update (package upgrade) only appear
+                // after an editor restart. This runs every frame via OnLoad.PumpRendererCleanup,
+                // so probe once, warn once, then stay quiet.
+                _rendererRetirementProbeFailed = true;
+                Debug.LogWarning(
+                    "[VLC for Unity] The loaded native plugin is older than the managed bindings " +
+                    "(missing 'libvlc_unity_has_retired_renderers'); the plugin was likely updated " +
+                    "on disk while the editor was running. Restart the Unity Editor to load the new " +
+                    "binary. Renderer-retirement cleanup is disabled until then.");
+                return false;
+            }
         }
+
+        private static bool _rendererRetirementProbeFailed;
 
         internal static void QueueRendererCleanupEvent()
         {

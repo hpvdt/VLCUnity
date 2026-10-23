@@ -27,6 +27,36 @@ public static class TrialNotice
     [return: MarshalAs(UnmanagedType.I1)]
     static extern bool IsTrial();
 
+    static bool _nativeTrialProbeFailed;
+
+    /// <summary>
+    /// The editor/player process keeps the native plugin that was loaded when it started.
+    /// If the plugin binary is replaced on disk (package upgrade), the new exports
+    /// (libvlc_unity_is_trial) only appear after an editor restart; until then the
+    /// P/Invoke throws EntryPointNotFoundException. Degrade instead of letting the
+    /// exception escape into editor/player event handlers.
+    /// </summary>
+    static bool IsTrialSafely()
+    {
+        if (_nativeTrialProbeFailed)
+            return false;
+
+        try
+        {
+            return IsTrial();
+        }
+        catch (System.EntryPointNotFoundException)
+        {
+            _nativeTrialProbeFailed = true;
+            Debug.LogWarning(
+                "[VLC for Unity] The loaded native plugin is older than the managed bindings " +
+                "(missing 'libvlc_unity_is_trial'); the plugin was likely updated on disk while " +
+                "the editor was running. Restart the Unity Editor to load the new binary. " +
+                "Trial detection is disabled until then.");
+            return false;
+        }
+    }
+
     private const string STORE_URL = "https://videolabs.io/store/unity/";
 
     private const string TRIAL_MESSAGE =
