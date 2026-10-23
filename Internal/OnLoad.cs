@@ -6,13 +6,31 @@ namespace LibVLCSharp
 {
     class OnLoad
     {
-#if !UNITY_EDITOR_WIN && (UNITY_ANDROID || UNITY_STANDALONE_OSX || UNITY_EDITOR_OSX)
-        const string UnityPlugin = "libVLCUnityPlugin";
+#if !UNITY_EDITOR_WIN && (UNITY_ANDROID || UNITY_STANDALONE_OSX || UNITY_EDITOR_OSX || UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX || UNITY_EMBEDDED_LINUX)
+        internal const string UnityPlugin = "libVLCUnityPlugin";
 #elif UNITY_IOS
-        const string UnityPlugin = "@rpath/VLCUnityPlugin.framework/VLCUnityPlugin";
+        internal const string UnityPlugin = "@rpath/VLCUnityPlugin.framework/VLCUnityPlugin";
 #else
-        const string UnityPlugin = "VLCUnityPlugin";
+        internal const string UnityPlugin = "VLCUnityPlugin";
 #endif
+
+#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX || UNITY_EMBEDDED_LINUX
+        internal static string LibVLCDirectory
+        {
+            get
+            {
+#if UNITY_EDITOR_LINUX
+                // In the Editor, plugins live under the Assets tree
+                return System.IO.Path.Combine(Application.dataPath, "VLCUnity", "Plugins", "Linux", "x86_64");
+#else
+                // In a standalone build, Unity flattens all native plugins into
+                // <app>_Data/Plugins/ (no x86_64 subdirectory).
+                return System.IO.Path.Combine(Application.dataPath, "Plugins");
+#endif
+            }
+        }
+#endif
+
         [DllImport(UnityPlugin, CallingConvention = CallingConvention.Cdecl, EntryPoint = "libvlc_unity_set_color_space")]
         static extern void SetColorSpace(UnityColorSpace colorSpace);
 
@@ -24,16 +42,38 @@ namespace LibVLCSharp
             Gamma = 0,
             Linear = 1,
         }
-        
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void OnBeforeSceneLoadRuntimeMethod()
         {
+            OnQuit();
+#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX || UNITY_EMBEDDED_LINUX
+            var libDir = LibVLCDirectory;
+            var pluginPath = libDir + "/vlc/plugins";
+            System.Environment.SetEnvironmentVariable("VLC_PLUGIN_PATH", pluginPath);
+            Debug.Log("[VLC] Set VLC_PLUGIN_PATH to " + pluginPath);
+#endif
           //  Debug.Log("UnityEngine.QualitySettings.activeColorSpace: " + PlayerColorSpace);
             SetColorSpace(PlayerColorSpace);
-#if UNITY_ANDROID || UNITY_IOS
+#if UNITY_ANDROID || UNITY_IOS || UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX || UNITY_EMBEDDED_LINUX
             GL.IssuePluginEvent(GetRenderEventFunc(), 1);
 #endif
+            Application.onBeforeRender += PumpRendererCleanup;
+            Application.quitting += OnQuit;
         }
+
+        static void PumpRendererCleanup()
+        {
+            if (TextureHelper.HasRetiredRenderers())
+                TextureHelper.QueueRendererCleanupEvent();
+        }
+
+        internal static void OnQuit()
+        {
+            Application.onBeforeRender -= PumpRendererCleanup;
+            Application.quitting -= OnQuit;
+        }
+
         static UnityColorSpace PlayerColorSpace => QualitySettings.activeColorSpace == 0 ? UnityColorSpace.Gamma : UnityColorSpace.Linear;
     }
 }

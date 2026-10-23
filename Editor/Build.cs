@@ -1,7 +1,9 @@
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 // standalone build step for copying necessary additional libvlc build files
 public class CopyLibVLCFiles : IPostprocessBuildWithReport
@@ -9,31 +11,143 @@ public class CopyLibVLCFiles : IPostprocessBuildWithReport
     const string lua = "lua";
     const string hrtfs = "hrtfs";
     const string locale = "locale";
-    const string pluginsDat = "plugins.dat";
     const string VLCUnity = "VLCUnity";
     const string x64 = "x86_64";
     const string Plugins = "Plugins";
-    const string plugins = "plugins";
     const string Data = "_Data";
     const string standaloneWindows = "StandaloneWindows64";
+    const string standaloneLinux = "StandaloneLinux64";
+    const string embeddedLinux = "EmbeddedLinux";
     const string Windows = "Windows";
+    const string Linux = "Linux";
+    const string vlc = "vlc";
     public int callbackOrder => 0;
     
     public void OnPostprocessBuild(BuildReport report)
     {
-        if(report.summary.platform.ToString() != standaloneWindows)
-            return;
+        if(report.summary.platform.ToString() == standaloneWindows)
+        {
+            PostprocessWindows(report);
+        }
+        else if(report.summary.platform.ToString() == standaloneLinux)
+        {
+            PostprocessLinux(report);
+        }
+        else if(report.summary.platform.ToString() == embeddedLinux)
+        {
+            PostprocessEmbeddedLinux(report);
+        }
+    }
 
+    void PostprocessWindows(BuildReport report)
+    {
         var buildOutput = Path.GetDirectoryName(report.summary.outputPath);
         var libvlcBuildOutput = Path.Combine(buildOutput, $"{Application.productName}{Data}", Plugins, x64);
         var sourceLibvlcLocation = Path.Combine(Path.GetFullPath(Application.dataPath), VLCUnity, Plugins, Windows, x64);
-        var sourcePluginsLibvlcLocation = Path.Combine(sourceLibvlcLocation, plugins);
 
         CopyFolder(Path.Combine(sourceLibvlcLocation, lua), Path.Combine(libvlcBuildOutput, lua));
         CopyFolder(Path.Combine(sourceLibvlcLocation, hrtfs), Path.Combine(libvlcBuildOutput, hrtfs));
         CopyFolder(Path.Combine(sourceLibvlcLocation, locale), Path.Combine(libvlcBuildOutput, locale));
 
-        CopyFile(Path.Combine(sourcePluginsLibvlcLocation, pluginsDat), Path.Combine(libvlcBuildOutput, pluginsDat));
+        var cacheGenSource = Path.Combine(sourceLibvlcLocation, "vlc-cache-gen.exe");
+        if (!File.Exists(cacheGenSource))
+        {
+            UnityEngine.Debug.LogWarning("vlc-cache-gen.exe not found, skipping plugin cache generation.");
+            return;
+        }
+        var cacheGenExe = Path.Combine(libvlcBuildOutput, "vlc-cache-gen.exe");
+        CopyFile(cacheGenSource, cacheGenExe);
+        RunCacheGen(cacheGenExe, libvlcBuildOutput);
+        File.Delete(cacheGenExe);
+    }
+
+    void PostprocessLinux(BuildReport report)
+    {
+        var buildOutput = Path.GetDirectoryName(report.summary.outputPath);
+        var exeName = Path.GetFileNameWithoutExtension(report.summary.outputPath);
+        var libvlcBuildOutput = Path.Combine(buildOutput, $"{exeName}{Data}", Plugins);
+        var sourceLibvlcLocation = Path.Combine(Path.GetFullPath(Application.dataPath), VLCUnity, Plugins, Linux, x64);
+
+        CopyLinuxLibVLCFiles(sourceLibvlcLocation, libvlcBuildOutput);
+    }
+
+    void PostprocessEmbeddedLinux(BuildReport report)
+    {
+        var outputPath = report.summary.outputPath;
+        var appBundle = Directory.Exists(outputPath) ? outputPath : Path.GetDirectoryName(outputPath);
+        var libvlcBuildOutput = Path.Combine(appBundle, "Data", Plugins);
+        var sourceLibvlcLocation = Path.Combine(Path.GetFullPath(Application.dataPath), VLCUnity, Plugins, Linux, x64);
+
+        CopyLinuxLibVLCFiles(sourceLibvlcLocation, libvlcBuildOutput);
+    }
+
+    void CopyLinuxLibVLCFiles(string sourceLibvlcLocation, string libvlcBuildOutput)
+    {
+        Directory.CreateDirectory(libvlcBuildOutput);
+
+        // Copy the vlc/ directory tree (plugins loaded by libvlc at runtime).
+        CopyFolder(Path.Combine(sourceLibvlcLocation, vlc), Path.Combine(libvlcBuildOutput, vlc));
+
+        // Embedded Linux does not always copy plugin root libraries by importer,
+        // so copy the libvlc and Unity bridge shared objects explicitly.
+        foreach (string file in Directory.GetFiles(sourceLibvlcLocation))
+        {
+            var name = Path.GetFileName(file);
+            if (name.EndsWith(".meta"))
+                continue;
+            if (name.Contains(".so"))
+            {
+                // Copy one real file per LibVLC library. File.Copy dereferences
+                // source symlinks, so copying SONAME aliases creates duplicates.
+                if (name.StartsWith("libvlc.so.") || name.StartsWith("libvlccore.so."))
+                    continue;
+                CopyFile(file, Path.Combine(libvlcBuildOutput, name));
+            }
+        }
+
+        // libVLCUnityPlugin.so has NEEDED entries for the SONAMEs
+        // (libvlc.so.12, libvlccore.so.9). Make them resolvable under
+        // their SONAME names so the dynamic linker resolves them at runtime.
+        LinkAsSoname(libvlcBuildOutput, "libvlc.so", "libvlc.so.12");
+        LinkAsSoname(libvlcBuildOutput, "libvlccore.so", "libvlccore.so.9");
+
+        // Unity may preload from Plugins/x64 while managed P/Invoke resolves
+        // Plugins/. Both names must resolve to the very same ELF file, not two
+        // independent bridges with separate registries and context state.
+        foreach (var architecture in new[] { "x64", "x86_64" })
+        {
+            var directory = Path.Combine(libvlcBuildOutput, architecture);
+            if (!Directory.Exists(directory))
+                continue;
+            foreach (var file in Directory.GetFiles(libvlcBuildOutput))
+            {
+                var name = Path.GetFileName(file);
+                if (name.Contains(".so") && !name.EndsWith(".meta"))
+                    ReplaceWithSymlink(Path.Combine(directory, name), "../" + name);
+            }
+        }
+    }
+
+    [DllImport("libc", EntryPoint = "symlink", SetLastError = true)]
+    static extern int symlink(string target, string linkpath);
+
+    static void LinkAsSoname(string directory, string source, string sonameName)
+    {
+        var srcPath = Path.Combine(directory, source);
+        var dstPath = Path.Combine(directory, sonameName);
+        if (!File.Exists(srcPath))
+            return;
+        ReplaceWithSymlink(dstPath, source);
+    }
+
+    static void ReplaceWithSymlink(string destination, string relativeTarget)
+    {
+        // These are generated player-output files only. Replace stale regular
+        // copies too; silently retaining them defeats ELF loader deduplication.
+        File.Delete(destination);
+        if (symlink(relativeTarget, destination) != 0)
+            throw new BuildFailedException($"Could not create Linux library alias {destination} -> {relativeTarget} " +
+                $"(errno {Marshal.GetLastWin32Error()}). A copied alias would load duplicate libraries.");
     }
 
     void CopyFolder(string sourceFolder, string destFolder)
@@ -46,6 +160,8 @@ public class CopyLibVLCFiles : IPostprocessBuildWithReport
         foreach (string file in files)
         {
             string name = Path.GetFileName( file );
+            if (name.EndsWith(".meta"))
+                continue;
             string dest = Path.Combine( destFolder, name );
             CopyFile( file, dest );
         }
@@ -63,6 +179,34 @@ public class CopyLibVLCFiles : IPostprocessBuildWithReport
         if(File.Exists(sourceFile))
         {
             File.Copy(sourceFile, destFile, overwrite);
+        }
+    }
+
+    static void RunCacheGen(string exePath, string pluginsPath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = $"\"{pluginsPath}\"",
+                WorkingDirectory = pluginsPath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var process = Process.Start(psi);
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                var stderr = process.StandardError.ReadToEnd();
+                UnityEngine.Debug.LogWarning($"vlc-cache-gen exited with code {process.ExitCode}: {stderr}");
+            }
+        }
+        catch (System.Exception e)
+        {
+            UnityEngine.Debug.LogWarning($"Failed to run vlc-cache-gen: {e.Message}");
         }
     }
 }

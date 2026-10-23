@@ -1,0 +1,26 @@
+{
+    "name": "VLCUnity.Tests",
+    "rootNamespace": "Videolabs.VLCUnity.Tests",
+    "references": [
+        "VLCUnity",
+        "VLCUnity.Demos",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "LibVLCSharp.dll",
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

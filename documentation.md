@@ -1,4 +1,4 @@
-Welcome to VLC for Unity on Windows!
+Welcome to VLC for Unity!
 
 ## Docs reference
 
@@ -8,10 +8,12 @@ It includes [best practices](https://code.videolan.org/videolan/LibVLCSharp/blob
 
 ## Components included
 
-For reference, you need to a bunch of components to get this working. On Windows, for example:
+For reference, you need a bunch of components to get this working. On Windows, for example:
 - libvlc.dll, libvlccore.dll (and its plugins in /plugins folder): These are nightly build DLLs of the VLC player libraries https://code.videolan.org/videolan/vlc
 - Custom build of libvlcsharp, the official VideoLAN C# binding to libvlc https://code.videolan.org/videolan/LibVLCSharp
 - VLCUnityPlugin.dll, the VLC-Unity native plugin https://code.videolan.org/videolan/vlc-unity
+
+On Linux, the equivalent files are libvlc.so, libvlccore.so, and libVLCUnityPlugin.so.
 
 This is all included in this package and it all works automatically for you.
 
@@ -21,6 +23,8 @@ LibVLCSharp docs (not Unity specific) https://code.videolan.org/videolan/LibVLCS
 
 !! You need to set your Unity target platform to "PC, Mac & Linux Standalone" to target Windows classic. Go for the x86_64 architecture.
 
+Both Direct3D 11 and Direct3D 12 graphics APIs are supported.
+
 ## Android
 
 For the Unity Android target, we support:
@@ -29,23 +33,24 @@ For the Unity Android target, we support:
 - x86,
 - x86_64.
 
-/!\ OpenGL ES MUST be selected in the project settings as a target graphics API. Vulkan is NOT supported at this time.
+/!\ OpenGL ES is supported on all listed Android architectures. Vulkan is supported only on arm64-v8a builds and requires Android 26 (Android 8.0 Oreo) or higher.
 
 /!\ If the plugin complains about missing binaries and there is an error about this, make sure you have each architecture properly setup in the inspector for each binaries in each VLCUnity/Plugins/Android/libs folders. Select a libvlc.so in any given folder, check the Inspector window of the Unity Editor and make sure the selected "Platform" and "CPU" are correct.
 
 /!\ If the scene starts but no video plays, make sure you set internet access to "required" in Unity player settings. The demo scenes play HTTP videos so your app needs the Android Internet permission.
 
-/!\ If running on Oculus, you may need to disable "Low Overhead Mode" which is not yet supported by vlc-unity. https://code.videolan.org/videolan/vlc-unity/-/issues/164
+Reminder: If you want to target arm64-v8a CPU architecture, you must select it in the player settings. To be able to select it, you need to switch the scripting backend to IL2CPP (as opposed to Mono). This is a Unity requirement unrelated to libvlc.
 
-Reminded: If you want to target arm64-v8a CPU architecture, you must select it in the player settings. To be able to select it, you need to switch the scripting backend to IL2CPP (as opposed to Mono). This is a Unity requirement unrelated to libvlc.
-
-VLC for Unity requires Android 16 minimum.
+VLC for Unity requires Android 21 (Android 5.0 Lollipop) minimum for OpenGL ES.
+For Vulkan support, Android 26 (Android 8.0 Oreo) or higher is required with arm64-v8a architecture.
 
 ## UWP
 
 For the Unity UWP target, we support:
 - x86_64,
 - ARM64.
+
+Both Direct3D 11 and Direct3D 12 graphics APIs are supported.
 
 If you need 32 bit versions, feel free to email us with information regarding your use case at unity@videolabs.io
 
@@ -65,6 +70,30 @@ It is possible to test things via the Editor on macOS beforehand though, on both
 
 > For Apple validation errors regarding OS Minimal version of the plugin when pushing to the AppStore, see this issue for a solution: https://code.videolan.org/videolan/vlc-unity/-/issues/227
 
+### iOS plugin coexistence
+
+The VLC iOS plugin registers its rendering callbacks from an Objective-C `+load` method in `Assets/VLCUnity/Plugins/iOS/LoadPlugin.mm`. It intentionally does **not** use the `IMPL_APP_CONTROLLER_SUBCLASS` macro, so it never competes for the global `AppControllerClassName` symbol and coexists with other plugins that do subclass `UnityAppController`. See Unity's [Initialization paths for native iOS plug-ins](https://docs.unity3d.com/6000.5/Documentation/Manual/ios-native-plugin-initialization.html) for background on why only one `IMPL_APP_CONTROLLER_SUBCLASS` can win.
+
+If you still see an `EXC_BAD_ACCESS` crash inside `libvlc_unity_media_player_new` at startup, it means our `+load` never ran and the rendering plugin is unregistered. Most often this is caused by `LoadPlugin.mm` being removed from the Xcode project's **Compile Sources** for the `UnityFramework` target. Re-add it (or re-import the VLC Unity package) and rebuild.
+
+As a last resort, if your project also embeds a custom `UnityAppController` subclass that you cannot modify, add the registration manually from inside that subclass:
+
+```objc
+#include "Unity/IUnityGraphics.h"
+
+typedef void (*UnityPluginLoadFunc)(IUnityInterfaces* unityInterfaces);
+typedef void (*UnityPluginUnloadFunc)();
+extern "C" void UnityRegisterRenderingPluginV5(UnityPluginLoadFunc loadPlugin,
+                                               UnityPluginUnloadFunc unloadPlugin);
+extern "C" void VLCUnity_UnityPluginLoad(IUnityInterfaces* unityInterfaces);
+extern "C" void VLCUnity_UnityPluginUnload();
+
+- (void)shouldAttachRenderDelegate
+{
+    UnityRegisterRenderingPluginV5(VLCUnity_UnityPluginLoad, VLCUnity_UnityPluginUnload);
+}
+```
+
 ## macOS
 
 Both Apple Silicon (ARM64) and Intel Macs builds are supported, in Editor and through XCode.
@@ -72,55 +101,281 @@ Both Apple Silicon (ARM64) and Intel Macs builds are supported, in Editor and th
 The following build scenario is currently unsupported for the beta release:
 - Universal builds (binaries with both Intel64 and Apple Silicon binaries) currently are not supported nor tested.
 
+### macOS Plugin Authorization (Editor only)
+
+VLC Unity plugins are currently unsigned. macOS Gatekeeper blocks unsigned code from running in the Unity Editor, which may prevent the plugins from loading during development.
+
+To fix this, use the built-in authorization tool:
+
+1. Go to **Tools > VLC Unity > macOS Plugin Setup**
+2. If plugins are blocked, click **Authorize Plugins**
+3. Enter your macOS password when prompted
+
+The tool removes the `com.apple.quarantine` extended attribute that macOS applies to downloaded files. A warning will appear in the Console if plugins are blocked, and also before building.
+
+**Note:** Standalone builds are not affected by this and work normally. This authorization is only needed for Editor testing.
+
+**Alternative:** If you have an Apple Developer certificate, you can sign the binaries yourself to permanently resolve this.
+
+## Linux
+
+For the Unity Linux target, we support:
+- x86_64.
+
+VLC for Unity requires Ubuntu 22.04 LTS or equivalent (glibc 2.35+).
+
+**Graphics APIs**: OpenGLCore is the default and remains the recommended
+compatibility path. Vulkan is available as an opt-in backend for Linux
+Standalone, Embedded Linux, and the Linux Editor. OpenGL uses GLX on X11 and
+XWayland, with experimental EGL support on native Wayland.
+
+To try Vulkan, disable **Auto Graphics API** for the Linux target and put
+Vulkan first with OpenGLCore second so Unity can fall back when Vulkan is not
+available, or select Vulkan alone for a validation build. The native plugin
+must be preloaded so it can install Vulkan
+device-extension requirements before Unity creates the device. Standalone and
+Embedded Linux players preload the packaged plugin automatically. After first
+importing or updating the plugin, restart the Linux Editor before selecting or
+testing Vulkan so the preloaded plugin can intercept the next device creation.
+The backend refuses to use external-memory functionality when interception was
+too late. If initialization reports this or another missing capability, select
+OpenGLCore and restart Unity or the player. A running Vulkan device cannot
+switch to OpenGL in place.
+
+The first Vulkan milestone requires all of the following on the same physical
+GPU:
+
+- `VK_EXT_physical_device_drm` with an exact render-node major/minor match;
+- exact OpenGL/Vulkan `deviceUUID` and `driverUUID` equality;
+- explicit single-plane linear DMA-BUF import support; and
+- bidirectional reusable opaque-fd external semaphores.
+
+Mesa Intel and AMD are the initial validation targets. Unsupported drivers,
+late-loaded Editor plugins, or multi-GPU configurations fail cleanly instead
+of guessing a render node or using Vulkan extensions that were not enabled.
+
+#### Building the Linux plugin with Vulkan support
+
+Vulkan support is a build-time option of the native plugin, not a runtime
+setting. Configure the build with `-Dlinux_vulkan=enabled` (or `auto`, the
+default, which silently omits Vulkan when its development files are missing):
+
+```
+meson setup build -Dlinux_vulkan=enabled
+```
+
+This requires the Vulkan development headers (`libvulkan-dev` /
+`vulkan-headers`) in addition to the usual `libgl-dev`, `libegl-dev`,
+`libx11-dev`, `libgbm-dev` (21.1+) and `libdrm-dev`. The resulting plugin gets
+Vulkan entry points from Unity when Unity is running Vulkan; it does not depend
+on `libvulkan.so.1` merely to load. OpenGLCore therefore remains usable on a
+machine without a Vulkan loader. A plugin binary built without Vulkan support
+simply reports that Vulkan is unavailable at runtime; rebuild with the option
+enabled to add it.
+
+The Linux Vulkan pipeline renders VLC into GBM linear DMA-BUF buffers on a
+plugin-owned OpenGL context, imports them into Unity's Vulkan device as
+external images, and copies them into the Unity-owned texture on Unity's
+render thread through an owned queue submission synchronized with reusable
+opaque-fd external semaphores. The physical device must match the GL device
+exactly (DRM render node and UUID equality), which is what the milestone
+requirements above validate.
+
+/!\ The plugin bundles LibVLC 4. System-installed VLC packages (typically VLC 3 on most Linux distributions) are not used.
+
+/!\ Native Wayland support (without XWayland) is planned for a future release.
+
+/!\ If the scene starts but no video plays, ensure your system has working OpenGL drivers. Check with `glxinfo | grep "OpenGL version"`.
+
+### Linux Troubleshooting
+
+The preferred GLX path shares textures directly with Unity. If that sharing
+probe fails, the DMA-BUF fallback requires the **DRI3** X11 extension and a
+hardware GPU driver. A missing DRI3 extension or software rendering (llvmpipe)
+prevents that fallback from displaying video.
+
+**Check DRI3 availability:**
+```
+xdpyinfo -queryExtensions | grep DRI
+```
+You should see `DRI3` in the output.
+
+**Check GPU renderer:**
+```
+glxinfo | grep "OpenGL renderer"
+```
+You should see your hardware GPU (e.g. `Mesa Intel(R) Iris(R) Xe Graphics`), not `llvmpipe`.
+
+**Hybrid GPU systems:**
+
+The GLX backend verifies direct OpenGL context sharing before playback. If it
+must fall back to DMA-BUF, it probes the available `/dev/dri/renderD*` devices
+and keeps the first device whose buffers can be imported by the active OpenGL
+context. Logs contain the probe result and selected render node.
+
+The Vulkan policy is deliberately stricter: it reads the Unity Vulkan physical
+device's DRM render major/minor and accepts only the node whose `st_rdev`
+matches exactly. It never uses OpenGL's first-compatible selection policy,
+PCI/UUID-to-node inference, or a single-node fallback. In Vulkan mode,
+`VLC_UNITY_DRM_DEVICE` is still exclusive and must resolve to that exact device.
+Startup logs include the Vulkan device name, DRM identity, selected node, and
+both GL/Vulkan UUIDs.
+
+To force a render node while diagnosing device selection:
+```
+VLC_UNITY_GLX_FORCE_DMABUF=1 \
+VLC_UNITY_DRM_DEVICE=/dev/dri/renderD129 \
+./YourGame.x86_64 -force-glcore
+```
+A stable `/dev/dri/by-path/*-render` symlink may be used instead. The override
+is exclusive: if that device is incompatible, initialization fails rather than
+silently using another GPU.
+
+`VLC_UNITY_GLX_FORCE_DMABUF=1` bypasses a working shared GLX context so the
+DMA-BUF device-selection fallback can be tested. Do not enable it for normal
+playback.
+
+To force the Linux OpenGL interop backend:
+```
+VLC_UNITY_LINUX_OPENGL_BACKEND=glx ./YourGame.x86_64 -force-glcore
+VLC_UNITY_LINUX_OPENGL_BACKEND=egl ./YourGame.x86_64 -force-glcore
+```
+Automatic selection waits for Unity's actual render-thread GLX/EGL context;
+`DISPLAY`, `WAYLAND_DISPLAY`, and GLES alone do not identify that binding.
+Video output callbacks are installed before playback, with setup waiting on the
+LibVLC thread for up to five seconds for Unity interop readiness. Unity's main
+and render threads never wait for that setup, and disposal cancels the wait.
+EGL is currently intended for experimental native Wayland
+testing.
+
+**Common causes of DRI3/GPU issues:**
+- **Outdated XWayland**: older XWayland versions may not expose DRI3, causing glamor to fall back to software rendering. Update your XWayland package.
+- **simpledrm conflict**: on EFI systems, the `simpledrm` framebuffer driver may claim `card0` during early boot, pushing the real GPU to `card1`. XWayland/glamor may fail to use a non-`card0` device. Workaround: use a native Xorg session instead of Wayland+XWayland, or use a kernel with `CONFIG_DRM_SIMPLEDRM=n`.
+- **Missing GPU driver**: install Mesa OpenGL and VA-API drivers for your hardware (`mesa-utils`, `mesa-va-drivers`, etc.).
+
 ## General
 
 The scenes are located in `Assets/VLCUnity/Demos/Scenes` and provide a way to get started quickly. 
 
 Select any scene (*.unity) and press play in the Unity Editor (or make a standalone build), and the video will start playing.
 
-## Getting started with the minimal sample script 
+### YouTube and other streaming sites
 
-The following information is to give you more context regarding what happens in the Demo scenes provided in the Asset.
-Understanding the scripts will allow you to know where to look when customizing your own player.
+VLC Unity does not resolve YouTube (or similar streaming site) page URLs. To play such content, extract a direct media stream URL first with a dedicated tool, then pass that URL to `VLCMediaPlayer`:
 
-Regarding the basic integration code that you need, you will find it in MinimalPlayback.cs.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp), a command-line tool (e.g. `yt-dlp -g <url>` prints the direct stream URLs),
+- [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode), a .NET library you can call from your C# scripts.
 
-First, you need to load the native libraries (libvlc):
+Extracted stream URLs are usually temporary, so resolve them shortly before playback.
+
+## VLCMediaPlayer Component
+
+The plugin provides a centralized `VLCMediaPlayer` component for easy integration:
+
+**Quick Setup:**
+1. Add `VLCMediaPlayer` component to any GameObject
+2. Configure media path, audio, and texture options in the Inspector
+3. Use `VLCDisplayMesh` or `VLCDisplayUGUI` to automatically apply video to renderers or UI
+
+**Key Features:**
+- Drag-and-drop setup with custom Inspector
+- Event-driven architecture (`OnPlayerStateChanged`, `OnTextureResized`)
+- Async media loading for network streams (`OpenAsync`)
+- Built-in controls for volume, seeking, track selection, and subtitles
+- Configurable texture orientation handling for Unity display targets
+- Multiple players per scene with shared LibVLC instance
+
+**Helper Components:**
+- `VLCDisplayMesh` - Applies video texture to any 3D mesh/renderer
+- `VLCDisplayUGUI` - Applies video texture to UI RawImage elements
+
+### Demo Scene Orientation Notes
+
+Video orientation depends on both the native texture backend and the Unity surface that displays the texture. The demo scenes intentionally do not all use the same correction values: mesh UVs, UI `RawImage` UVs, and platform graphics backends can have different coordinate origins.
+
+Do not normalize `flipTextureX`, `flipTextureY`, or `RawImage.uvRect` values across all demos without testing the affected display path.
+
+| Scene or display path | Windows | Android | Linux | Notes |
+| --- | --- | --- | --- | --- |
+| `VLCMinimalPlayback`, `VLCTransparentVideoPlayback`, `VLCSubtitles` using `VLCDisplayMesh` | `flipTextureX=false`, `flipTextureY=false` | Same expected setup | Same expected setup | These use a regular mesh screen and the shared `VLCMediaPlayer.OutputTexture`. |
+| `VLC 3D Example` using `VLCDisplayMesh` | `flipTextureX=true`, `flipTextureY=true` | Same scene-level correction expected | Same scene-level correction expected | The cinema-room screen mesh has its own UV/coordinate orientation, so this scene keeps explicit player flips. |
+| `VLC Playlist Demo` using `VLCPlaylistController` and `VLCDisplayMesh` | `flipTextureX=true`, `flipTextureY=true` on the playlist controller | Same scene-level correction expected | Same scene-level correction expected | The controller creates hidden `VLCMediaPlayer` instances at runtime, so the scene-level controller flips are propagated to those internal players. |
+| `VLC Canvas Example` / `VLCDisplayUGUI` using `RawImage` | `VLCDisplayUGUI` applies `RawImage.uvRect = Rect(1, 1, -1, -1)` | `VLCDisplayUGUI` applies `RawImage.uvRect = Rect(1, 1, -1, -1)` | `VLCDisplayUGUI` applies `RawImage.uvRect = Rect(1, 1, -1, -1)` | UI rendering has a different texture coordinate path than mesh rendering. The Canvas path corrects both UI axes locally instead of changing the shared `VLCMediaPlayer` flips. |
+| Custom UI with `RawImage` | Start from `VLCDisplayUGUI` | Start from `VLCDisplayUGUI` | Start from `VLCDisplayUGUI` | If a custom UI is mirrored or upside down, prefer correcting the UI `uvRect` instead of changing the shared `VLCMediaPlayer` flips. |
+
+When diagnosing orientation, use a test frame with identifiable corners. For example, if content that should appear at bottom right appears at bottom left, the X axis is mirrored. If it appears at top right, the Y axis is mirrored. If it appears at top left, both axes are mirrored.
+
+**Example Usage:**
+```csharp
+[SerializeField] private VLCMediaPlayer mediaPlayer;
+
+void Start()
+{
+    mediaPlayer.OnPlayerStateChanged.AddListener((state) => {
+        Debug.Log($"Player state: {state}");
+    });
+    
+    mediaPlayer.OnTextureResized += (texture) => {
+        Debug.Log($"Video size: {texture.width}x{texture.height}");
+    };
+}
+
+public void PlayVideo(string url)
+{
+    mediaPlayer.OpenAsync(url);
+}
+```
+
+## Advanced: Manual Integration
+
+The following information provides context on how the VLCMediaPlayer component works internally.
+For most use cases, the VLCMediaPlayer component is all you need. See the section above.
+
+The VLCMediaPlayer component handles all of this automatically:
+
+1. Loading native libraries (libvlc):
 ```
 Core.Initialize(UnityEngine.Application.dataPath);
 ```
 
-You can then create LibVLCSharp objects like so:
+2. Creating LibVLCSharp objects and starting playback:
 ```
 LibVLC = new LibVLC();
 MediaPlayer = new MediaPlayer(LibVLC);
-```
-
-The frame updating is done in a Unity coroutine or Update() function:
-```
-IntPtr texptr = MediaPlayer.GetFrame(width, height, out bool updated);
-if (updated)
-{
-    tex.UpdateExternalTexture(texptr);
-}
-```
-
-See Update() function for more details.
-
-Once that is all setup, you can create a new Media and start playback like so
-```
 MediaPlayer.Play(new Media(new Uri("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")));
 ```
 
-To get up and running easily and quickly, I recommend you to load the Assets/VLCUnity/Demos/Scenes/MinimalPlayback.unity scene and press "Play". 
-The few lines of setup code I mentioned above are located in Assets/VLCUnity/Demos/Scripts/MinimalPlayback.cs.
+3. Texture creation and frame updating after video dimensions are available:
+```
+Texture2D vlcTexture = null;
+RenderTexture outputTexture = null;
+
+// In Update():
+if (vlcTexture == null)
+{
+    vlcTexture = TextureHelper.CreateNativeTexture(MediaPlayer, linear: true);
+    if (vlcTexture != null)
+    {
+        outputTexture = new RenderTexture(vlcTexture.width, vlcTexture.height, 0, RenderTextureFormat.ARGB32);
+        outputTexture.Create();
+    }
+}
+
+if (vlcTexture != null && TextureHelper.UpdateTexture(vlcTexture, MediaPlayer))
+{
+    Graphics.Blit(vlcTexture, outputTexture);
+}
+```
+
+To get up and running easily and quickly, load the Assets/VLCUnity/Demos/Scenes/VLCMinimalPlayback.unity scene and press "Play".
+The scene uses the VLCMediaPlayer component with all configuration visible in the Inspector.
 
 ## Scenes
 
 - A minimal playback example with buttons,
 - 360 playback with keyboard navigation built-in,
 - A video with subtitles showcasing support,
-- The VLCPlayerExample provides a great base with more controls,
+- The VLC Canvas Example provides a UI-based player with more controls,
 - 3D scene you can move around in with a movie screen and chairs in a cinema room.
 
 For more API usage information, explore our [online docs](https://code.videolan.org/videolan/LibVLCSharp/-/blob/master/docs/home.md).
@@ -136,18 +391,10 @@ Removing one of the System.Numerics.Vectors.dll in your project seems to be a va
 
 ## Asset import management
 
-All releases include binaries for all platforms.
+All releases include binaries for all supported platforms.
 
-The free trial contains binaries that are watermarked on all platforms.
+VLC Unity is distributed as either a trial package or a pro package:
+- Trial packages include all supported platforms, with watermarked video output and a 30 second playback limit per session.
+- Pro packages include all supported platforms without trial limitations.
 
-The Windows paid version contains binaries that are watermarked on all platforms, _except_ on Windows. The iOS paid version contains binaries that are watermarked on all platforms, _except_ iOS. And so on...
-
-VLC Unity is provided as standalone .unitypackage files, that you can import using the Unity Editor. 
-
-In the scenario that you have bought multiple plugins, let's say Android and Windows, you want to have no watermark on Android and Windows inside your single project.
-This can be achieved by selectively importing binaries of the plugins during the import process. Let's walk through the necessary steps:
-
-1. So first, import the Windows asset for example, but untick the Android specific binaries. All binaries will be included in your project except for the Android ones from the Windows asset (which are watermarked).
-2. Then, import the Android asset, and untick all binaries except for the Android ones (which are watermark-free).
-
-This way you will have imported your paid, watermark-free binaries for Windows and Android into your project but still retain the free, watermark binaries for all other platforms, such as UWP, macOS and iOS.
+VLC Unity is provided as standalone .unitypackage files that you can import using the Unity Editor.
